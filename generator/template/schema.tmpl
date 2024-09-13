@@ -1,0 +1,27 @@
+{{ define "schema" }}
+
+// AUTO GENERATED
+// DO NOT EDIT
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator db {
+  provider = "go run github.com/steebchen/prisma-client-go"
+}
+{{ range .Models }}
+model {{ .Name }} {
+    {{ range .Fields }}{{ .Name }} {{ .Type }} {{ .SchemaAdditional }}
+    {{ end }}
+}
+{{ end }}
+
+{{ range .Enums }}
+enum {{ .Name }} {
+  {{ range .Values }}{{ . }}
+  {{ end }}
+}
+{{ end }}
+{{end}}

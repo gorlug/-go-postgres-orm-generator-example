@@ -1,0 +1,50 @@
+{{ define "repository" }}
+package {{.Package}}
+
+// GENERATED FILE
+// DO NOT EDIT
+
+import (
+	"{{ .ProjectName }}/logger"
+	"context"
+	"github.com/doug-martin/goqu/v9"
+	_ "github.com/doug-martin/goqu/v9/dialect/postgres"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type {{.Name}}Repository struct {
+	connPool *pgxpool.Pool
+	dialect  goqu.DialectWrapper
+}
+
+func New{{.Name}}Repository(connPool *pgxpool.Pool) *{{.Name}}Repository {
+    return &{{.Name}}Repository{
+        connPool: connPool,
+        dialect:  goqu.Dialect("postgres"),
+    }
+}
+
+{{$lowerTypeName := .NameLower}}
+
+func (r *{{.Name}}Repository) Create({{$lowerTypeName}} {{.Name}}) error {
+    sql, args, err := r.dialect.Insert("{{.Name}}").
+        Prepared(true).
+        Rows(goqu.Record{
+            {{ range .Fields }}{{ if .IsNotIdField }}"{{.DbName}}": {{$lowerTypeName}}.{{.Name}},{{end}}
+            {{end}}
+        }).
+        ToSQL()
+    if err != nil {
+        logger.Error("error creating create {{.Name}} sql: %v", err)
+        return err
+    }
+
+    _, err = r.connPool.Exec(context.Background(), sql, args...)
+    if err != nil {
+        logger.Error("error creating {{.Name}}: %v", err)
+        return err
+    }
+
+    return nil
+}
+{{ end }}
