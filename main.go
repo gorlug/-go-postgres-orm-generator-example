@@ -6,6 +6,7 @@ import (
 	"github.com/joho/godotenv"
 	"go-postgres-generator-example/logger"
 	"go-postgres-generator-example/todo"
+	"go-postgres-generator-example/user"
 	"log"
 	"os"
 	"time"
@@ -24,16 +25,99 @@ func main() {
 		panic(err)
 	}
 
+	userRepository := user.NewUserRepository(connpool)
 	todoRepository := todo.NewTodoRepository(connpool)
+
+	userId, userFromDb := createUser(err, userRepository)
+	todoId, todoFromDb := createTodo(userId, err, todoRepository)
+
+	updateUser(userFromDb, err, userRepository, userId)
+	updateTodo(todoFromDb, err, todoRepository, todoId)
+
+	deleteTodo(err, todoRepository, todoId)
+	deleteUser(err, userRepository, userId)
+}
+
+func deleteUser(err error, userRepository *user.UserRepository, userId int) {
+	err = userRepository.Delete(userId)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func deleteTodo(err error, todoRepository *todo.TodoRepository, todoId int) {
+	err = todoRepository.Delete(todoId)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func updateTodo(todoFromDb todo.Todo, err error, todoRepository *todo.TodoRepository, todoId int) {
+	todoFromDb.Checked = true
+	err = todoRepository.Update(todoFromDb)
+	if err != nil {
+		panic(err)
+	}
+	updatedTodoFromDb, err := todoRepository.GetById(todoId)
+	if err != nil {
+		panic(err)
+	}
+	logger.Debug("updated todo from db", updatedTodoFromDb)
+}
+
+func updateUser(userFromDb user.User, err error, userRepository *user.UserRepository, userId int) {
+	userFromDb.State.SomeValue = "updated value"
+	err = userRepository.Update(userFromDb)
+	if err != nil {
+		panic(err)
+	}
+	updatedUserFromDb, err := userRepository.GetById(userId)
+	if err != nil {
+		panic(err)
+	}
+	logger.Debug("updated user from db", updatedUserFromDb)
+}
+
+func createTodo(userId int, err error, todoRepository *todo.TodoRepository) (int, todo.Todo) {
 	todoToCreate := todo.Todo{
 		Name:    "Test",
 		Checked: false,
 		State:   todo.TodoStateCreated,
+		UserId:  userId,
 	}
-	err = todoRepository.Create(todoToCreate)
+	todoId, err := todoRepository.Create(todoToCreate)
 	if err != nil {
 		panic(err)
 	}
+
+	logger.Debug("create todo with todoId", todoId)
+	todoFromDb, err := todoRepository.GetById(todoId)
+	if err != nil {
+		panic(err)
+	}
+	logger.Debug("todo from db", todoFromDb)
+	return todoId, todoFromDb
+}
+
+func createUser(err error, userRepository *user.UserRepository) (int, user.User) {
+	userInstance := user.User{
+		Email: "doesnot@shouldnotexist.com",
+		State: user.UserState{
+			SomeValue: "",
+		},
+	}
+	userId, err := userRepository.Create(userInstance)
+	if err != nil {
+		logger.LogError("Failed to create user: %v", err)
+		panic(err)
+	}
+	logger.Debug("create user with userId", userId)
+	userFromDb, err := userRepository.GetById(userId)
+	if err != nil {
+		panic(err)
+	}
+	logger.Debug("user from db", userFromDb)
+	return userId, userFromDb
 }
 
 func CreatePostgesConnpool(dbUrl string) (*pgxpool.Pool, error) {

@@ -14,9 +14,17 @@ type SchemaModelField struct {
 	SchemaAdditional string
 }
 
+type SchemaReference struct {
+	Name  string
+	Model string
+	Field string
+}
+
 type SchemaModel struct {
-	Name   string
-	Fields []SchemaModelField
+	Name                     string
+	Fields                   []SchemaModelField
+	References               []SchemaReference
+	ModelsReferencingThisOne []string
 }
 
 type SchemaEnum struct {
@@ -25,13 +33,13 @@ type SchemaEnum struct {
 }
 
 type Schema struct {
-	Models []SchemaModel
+	Models []*SchemaModel
 	Enums  []SchemaEnum
 }
 
 func GenerateSchema(structTypes []any) error {
 	schema := Schema{
-		Models: []SchemaModel{},
+		Models: []*SchemaModel{},
 		Enums:  []SchemaEnum{},
 	}
 	for _, structType := range structTypes {
@@ -53,29 +61,83 @@ func GenerateSchema(structTypes []any) error {
 }
 
 func generateSchemaFromStruct(parsedStruct ParsedStruct, schema *Schema) SchemaModel {
+	logger.Debug("parsedStruct", parsedStruct)
 	model := SchemaModel{
-		Name:   parsedStruct.Name,
-		Fields: make([]SchemaModelField, len(parsedStruct.Fields)),
+		Name:                     strings.ToLower(parsedStruct.Name),
+		Fields:                   make([]SchemaModelField, len(parsedStruct.Fields)+3),
+		ModelsReferencingThisOne: []string{},
 	}
+	addIdFieldToModel(&model)
 	for index, field := range parsedStruct.Fields {
-		enumValues := field.OriginalStructField.Tag.Get("enum")
-		valuesSplit := strings.Split(enumValues, ",")
-		schemaAdditional := field.OriginalStructField.Tag.Get("prisma")
-		model.Fields[index] = SchemaModelField{
-			Name:             field.DbName,
-			Type:             getDbType(field.Type),
-			SchemaAdditional: fmt.Sprint(schemaAdditional, " ", getDefaultValue(field, valuesSplit, schemaAdditional)),
+		if hasPrismaReference(field) {
+			addPrismaReference(&model, field, schema)
 		}
-		if enumValues != "" {
+		annotations := getPrismaAnnotations(field)
+		model.Fields[index+1] = SchemaModelField{
+			Name:             field.DbName,
+			Type:             getDbType(parsedStruct, field),
+			SchemaAdditional: fmt.Sprint(annotations, " ", getDefaultValue(field, field.EnumValues, annotations)),
+		}
+		if field.IsEnum {
 			schemaEnum := SchemaEnum{
-				Name:   field.Type,
-				Values: valuesSplit,
+				Name:   getEnumName(parsedStruct, field),
+				Values: field.EnumValues,
 			}
 			schema.Enums = append(schema.Enums, schemaEnum)
 		}
 	}
-	schema.Models = append(schema.Models, model)
+	addCreatedAndUpdatedFields(&model)
+	logger.Debug("model fields", model.Fields)
+	schema.Models = append(schema.Models, &model)
 	return model
+}
+
+func addPrismaReference(s *SchemaModel, field ParsedStructField, schema *Schema) {
+	reference := getPrismaReference(field)
+	s.References = append(s.References, SchemaReference{
+		Name:  field.DbName,
+		Model: reference,
+		Field: "id",
+	})
+	for _, model := range schema.Models {
+		if reference == model.Name {
+			model.ModelsReferencingThisOne = append(model.ModelsReferencingThisOne, s.Name)
+			break
+		}
+	}
+}
+
+func getPrismaAnnotations(field ParsedStructField) string {
+	return field.OriginalStructField.Tag.Get("prisma")
+}
+
+func getPrismaReference(field ParsedStructField) string {
+	return field.OriginalStructField.Tag.Get("prismaReference")
+}
+
+func addCreatedAndUpdatedFields(s *SchemaModel) {
+	s.Fields[len(s.Fields)-2] = SchemaModelField{
+		Name:             "created_at",
+		Type:             "DateTime",
+		SchemaAdditional: "@default(now())",
+	}
+	s.Fields[len(s.Fields)-1] = SchemaModelField{
+		Name:             "updated_at",
+		Type:             "DateTime",
+		SchemaAdditional: "@default(now()) @updatedAt",
+	}
+}
+
+func addIdFieldToModel(s *SchemaModel) {
+	s.Fields[0] = SchemaModelField{
+		Name:             "id",
+		Type:             "Int",
+		SchemaAdditional: "@id @default(autoincrement())",
+	}
+}
+
+func getEnumName(parsedStruct ParsedStruct, field ParsedStructField) string {
+	return fmt.Sprint(parsedStruct.Name, field.Name)
 }
 
 func getDefaultValue(field ParsedStructField, values []string, additional string) string {
@@ -96,11 +158,15 @@ func getDefaultValue(field ParsedStructField, values []string, additional string
 	case "bool":
 		return "@default(false)"
 	default:
-		return ""
+		return "@default(\"{}\")"
 	}
 }
 
-func getDbType(t string) string {
+func getDbType(parsedStruct ParsedStruct, field ParsedStructField) string {
+	if field.IsEnum {
+		return getEnumName(parsedStruct, field)
+	}
+	t := field.Type
 	switch t {
 	case "int":
 		return "Int"
@@ -109,6 +175,6 @@ func getDbType(t string) string {
 	case "bool":
 		return "Boolean"
 	default:
-		return t
+		return "Json"
 	}
 }

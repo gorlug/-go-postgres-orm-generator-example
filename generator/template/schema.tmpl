@@ -14,7 +14,9 @@ generator db {
 {{ range .Models }}
 model {{ .Name }} {
     {{ range .Fields }}{{ .Name }} {{ .Type }} {{ .SchemaAdditional }}
-    {{ end }}
+    {{ end }}{{range .References}}{{ .Model }} {{ .Model }} @relation(fields: [{{.Name}}], references: [id], onDelete: Cascade, onUpdate: Cascade )
+    {{end}}{{range .ModelsReferencingThisOne}}{{ . }} {{ . }}[]
+    {{end}}
 }
 {{ end }}
 

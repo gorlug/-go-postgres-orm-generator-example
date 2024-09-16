@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"go-postgres-generator-example/logger"
 	"os"
+	"strings"
 )
 
 func WriteBufferToFile(buffer *bytes.Buffer, path string) error {
@@ -25,4 +26,16 @@ func WriteBytesToFile(bytes *[]byte, path string) error {
 		return err
 	}
 	return nil
+}
+
+func firstLetterToLower(name string) string {
+	return strings.ToLower(name[:1]) + name[1:]
+}
+
+func firstLetterToUpper(name string) string {
+	return strings.ToUpper(name[:1]) + name[1:]
+}
+
+func hasPrismaReference(field ParsedStructField) bool {
+	return getPrismaReference(field) != ""
 }

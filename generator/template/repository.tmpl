@@ -6,10 +6,13 @@ package {{.Package}}
 
 import (
 	"{{ .ProjectName }}/logger"
+	"encoding/json"
 	"context"
+	"fmt"
 	"github.com/doug-martin/goqu/v9"
 	_ "github.com/doug-martin/goqu/v9/dialect/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"time"
 )
 
 type {{.Name}}Repository struct {
@@ -26,25 +29,138 @@ func New{{.Name}}Repository(connPool *pgxpool.Pool) *{{.Name}}Repository {
 
 {{$lowerTypeName := .NameLower}}
 
-func (r *{{.Name}}Repository) Create({{$lowerTypeName}} {{.Name}}) error {
-    sql, args, err := r.dialect.Insert("{{.Name}}").
+func (r *{{.Name}}Repository) Create({{$lowerTypeName}} {{.Name}}) (int, error) {
+    sql, args, err := r.dialect.Insert("{{$lowerTypeName}}").
         Prepared(true).
         Rows(goqu.Record{
-            {{ range .Fields }}{{ if .IsNotIdField }}"{{.DbName}}": {{$lowerTypeName}}.{{.Name}},{{end}}
-            {{end}}
+            {{ template "setFieldRecords" . }}
         }).
+        Returning("id").
         ToSQL()
     if err != nil {
         logger.Error("error creating create {{.Name}} sql: %v", err)
+        return -1, err
+    }
+
+    rows, err := r.connPool.Query(context.Background(), sql, args...)
+    if err != nil {
+        logger.Error("error creating {{.Name}}: %v", err)
+        return -1, err
+    }
+    defer rows.Close()
+    var id int
+    if rows.Next() {
+        err = rows.Scan(&id)
+        if err != nil {
+            logger.Error("error scanning User: %v", err)
+            return -1, err
+        }
+    } else {
+        logger.Error("{{.Name}} already exists")
+        return -1, {{.Name}}AlreadyExistsError{ {{.Name}}: {{$lowerTypeName}} }
+    }
+
+    return id, nil
+
+}
+
+type {{.Name}}AlreadyExistsError struct {
+	{{.Name}} {{.Name}}
+}
+
+func (e {{.Name}}AlreadyExistsError) Error() string {
+	return fmt.Sprint("{{.Name}} ", e.{{.Name}}, " already exists")
+}
+
+func (r *{{.Name}}Repository) GetById(id int) ({{.Name}}, error) {
+	logger.Debug("Getting {{.Name}} by id ", id)
+	sql, args, _ := r.dialect.From("{{$lowerTypeName}}").
+		Prepared(true).
+		Select(
+		    "id",
+		    "created_at",
+		    "updated_at",
+		    {{ range .Fields }}"{{.DbName}}",
+            {{end}}
+		).
+		Where(goqu.Ex{"id": id}).
+		ToSQL()
+
+	rows, err := r.connPool.Query(context.Background(), sql, args...)
+	if err != nil {
+		logger.Error("Failed to get {{.Name}}: ", err)
+	}
+	defer rows.Close()
+	item := {{.Name}}{}
+	for rows.Next() {
+		err = rows.Scan(
+		    &item.Id,
+		    &item.CreatedAt,
+		    &item.UpdatedAt,
+		    {{ range .Fields }}&item.{{.Name}},
+            {{end}}
+        )
+		if err != nil {
+			logger.Error("Failed to scan {{.Name}}: ", err)
+			return item, err
+		}
+	}
+	return item, nil
+}
+
+func (r *{{.Name}}Repository) Update({{$lowerTypeName}} {{.Name}}) error {
+    sql, args, err := r.dialect.Update("{{$lowerTypeName}}").
+        Prepared(true).
+        Set(goqu.Record{
+            {{ template "setFieldRecords" . }}
+        }).
+        Where(goqu.Ex{"id": {{$lowerTypeName}}.Id}).
+        ToSQL()
+    if err != nil {
+        logger.Error("error creating update {{.Name}} sql: %v", err)
         return err
     }
 
     _, err = r.connPool.Exec(context.Background(), sql, args...)
     if err != nil {
-        logger.Error("error creating {{.Name}}: %v", err)
+        logger.Error("error updating {{.Name}}: %v", err)
         return err
     }
 
     return nil
 }
+
+func (r *{{.Name}}Repository) Delete(id int) error {
+    sql, args, err := r.dialect.Delete("{{$lowerTypeName}}").
+        Prepared(true).
+        Where(goqu.Ex{"id": id}).
+        ToSQL()
+    if err != nil {
+        logger.Error("error creating delete {{.Name}} sql: %v", err)
+        return err
+    }
+
+    _, err = r.connPool.Exec(context.Background(), sql, args...)
+    if err != nil {
+        logger.Error("error deleting {{.Name}}: %v", err)
+        return err
+    }
+
+    return nil
+}
+
+func jsonToString(jsonData any) string {
+	bytes, err := json.Marshal(jsonData)
+	if err != nil {
+		return "{}"
+	}
+	return string(bytes)
+}
 {{ end }}
+
+{{ define "setFieldRecords" }}
+{{$lowerTypeName := .NameLower}}
+		"updated_at": time.Now(),
+        {{ range .Fields }}{{ if .IsNotIdField }}"{{.DbName}}": {{if .IsJson}}jsonToString({{end}}{{$lowerTypeName}}.{{.Name}}{{if .IsJson}}){{end}},{{end}}
+        {{end}}
+{{end}}

@@ -1,4 +1,4 @@
-package todo
+package user
 
 // GENERATED FILE
 // DO NOT EDIT
@@ -14,39 +14,37 @@ import (
 	"time"
 )
 
-type TodoRepository struct {
+type UserRepository struct {
 	connPool *pgxpool.Pool
 	dialect  goqu.DialectWrapper
 }
 
-func NewTodoRepository(connPool *pgxpool.Pool) *TodoRepository {
-	return &TodoRepository{
+func NewUserRepository(connPool *pgxpool.Pool) *UserRepository {
+	return &UserRepository{
 		connPool: connPool,
 		dialect:  goqu.Dialect("postgres"),
 	}
 }
 
-func (r *TodoRepository) Create(todo Todo) (int, error) {
-	sql, args, err := r.dialect.Insert("todo").
+func (r *UserRepository) Create(user User) (int, error) {
+	sql, args, err := r.dialect.Insert("user").
 		Prepared(true).
 		Rows(goqu.Record{
 
 			"updated_at": time.Now(),
-			"name":       todo.Name,
-			"checked":    todo.Checked,
-			"state":      todo.State,
-			"user_id":    todo.UserId,
+			"email":      user.Email,
+			"state":      jsonToString(user.State),
 		}).
 		Returning("id").
 		ToSQL()
 	if err != nil {
-		logger.Error("error creating create Todo sql: %v", err)
+		logger.Error("error creating create User sql: %v", err)
 		return -1, err
 	}
 
 	rows, err := r.connPool.Query(context.Background(), sql, args...)
 	if err != nil {
-		logger.Error("error creating Todo: %v", err)
+		logger.Error("error creating User: %v", err)
 		return -1, err
 	}
 	defer rows.Close()
@@ -58,102 +56,96 @@ func (r *TodoRepository) Create(todo Todo) (int, error) {
 			return -1, err
 		}
 	} else {
-		logger.Error("Todo already exists")
-		return -1, TodoAlreadyExistsError{Todo: todo}
+		logger.Error("User already exists")
+		return -1, UserAlreadyExistsError{User: user}
 	}
 
 	return id, nil
 
 }
 
-type TodoAlreadyExistsError struct {
-	Todo Todo
+type UserAlreadyExistsError struct {
+	User User
 }
 
-func (e TodoAlreadyExistsError) Error() string {
-	return fmt.Sprint("Todo ", e.Todo, " already exists")
+func (e UserAlreadyExistsError) Error() string {
+	return fmt.Sprint("User ", e.User, " already exists")
 }
 
-func (r *TodoRepository) GetById(id int) (Todo, error) {
-	logger.Debug("Getting Todo by id ", id)
-	sql, args, _ := r.dialect.From("todo").
+func (r *UserRepository) GetById(id int) (User, error) {
+	logger.Debug("Getting User by id ", id)
+	sql, args, _ := r.dialect.From("user").
 		Prepared(true).
 		Select(
 			"id",
 			"created_at",
 			"updated_at",
-			"name",
-			"checked",
+			"email",
 			"state",
-			"user_id",
 		).
 		Where(goqu.Ex{"id": id}).
 		ToSQL()
 
 	rows, err := r.connPool.Query(context.Background(), sql, args...)
 	if err != nil {
-		logger.Error("Failed to get Todo: ", err)
+		logger.Error("Failed to get User: ", err)
 	}
 	defer rows.Close()
-	item := Todo{}
+	item := User{}
 	for rows.Next() {
 		err = rows.Scan(
 			&item.Id,
 			&item.CreatedAt,
 			&item.UpdatedAt,
-			&item.Name,
-			&item.Checked,
+			&item.Email,
 			&item.State,
-			&item.UserId,
 		)
 		if err != nil {
-			logger.Error("Failed to scan Todo: ", err)
+			logger.Error("Failed to scan User: ", err)
 			return item, err
 		}
 	}
 	return item, nil
 }
 
-func (r *TodoRepository) Update(todo Todo) error {
-	sql, args, err := r.dialect.Update("todo").
+func (r *UserRepository) Update(user User) error {
+	sql, args, err := r.dialect.Update("user").
 		Prepared(true).
 		Set(goqu.Record{
 
 			"updated_at": time.Now(),
-			"name":       todo.Name,
-			"checked":    todo.Checked,
-			"state":      todo.State,
-			"user_id":    todo.UserId,
+			"email":      user.Email,
+			"state":      jsonToString(user.State),
 		}).
-		Where(goqu.Ex{"id": todo.Id}).
+		Where(goqu.Ex{"id": user.Id}).
 		ToSQL()
 	if err != nil {
-		logger.Error("error creating update Todo sql: %v", err)
+		logger.Error("error creating update User sql: %v", err)
 		return err
 	}
 
 	_, err = r.connPool.Exec(context.Background(), sql, args...)
 	if err != nil {
-		logger.Error("error updating Todo: %v", err)
+		logger.Error("error updating User: %v", err)
 		return err
 	}
 
 	return nil
 }
 
-func (r *TodoRepository) Delete(id int) error {
-	sql, args, err := r.dialect.Delete("todo").
+func (r *UserRepository) Delete(id int) error {
+	sql, args, err := r.dialect.Delete("user").
 		Prepared(true).
 		Where(goqu.Ex{"id": id}).
 		ToSQL()
 	if err != nil {
-		logger.Error("error creating delete Todo sql: %v", err)
+		logger.Error("error creating delete User sql: %v", err)
 		return err
 	}
 
 	_, err = r.connPool.Exec(context.Background(), sql, args...)
 	if err != nil {
-		logger.Error("error deleting Todo: %v", err)
+		logger.Error("error deleting User: %v", err)
 		return err
 	}
 
