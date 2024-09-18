@@ -28,33 +28,64 @@ func main() {
 	userRepository := user.NewUserRepository(connpool)
 	todoRepository := todo.NewTodoRepository(connpool)
 
-	userId, userFromDb := createUser(err, userRepository)
-	todoId, todoFromDb := createTodo(userId, err, todoRepository)
+	userId, userFromDb := createUser(userRepository)
+	todoId, todoFromDb := createTodo(userId, todoRepository)
 
-	updateUser(userFromDb, err, userRepository, userId)
-	updateTodo(todoFromDb, err, todoRepository, todoId)
+	updateUser(userFromDb, userRepository, userId)
+	updateTodo(todoFromDb, todoRepository, todoId)
+	createSecondTodo(userId, todoRepository)
 
-	deleteTodo(err, todoRepository, todoId)
-	deleteUser(err, userRepository, userId)
+	getAllCheckedTodos(todoRepository, userId)
+
+	deleteTodo(todoRepository, todoId)
+	deleteUser(userRepository, userId)
 }
 
-func deleteUser(err error, userRepository *user.UserRepository, userId int) {
-	err = userRepository.Delete(userId)
+func getAllCheckedTodos(repository *todo.TodoRepository, id int) {
+	checkedTodos, err := repository.GetCheckedTodos(id)
+	if err != nil {
+		panic(err)
+	}
+	logger.Debug("checked todos", checkedTodos)
+}
+
+func createSecondTodo(id int, repository *todo.TodoRepository) {
+	todoToCreate := todo.Todo{
+		Name:    "Test2",
+		Checked: false,
+		State:   todo.TodoStateCreated,
+		UserId:  id,
+	}
+	todoId, err := repository.Create(todoToCreate)
+	if err != nil {
+		panic(err)
+	}
+
+	logger.Debug("create todo with todoId", todoId)
+	todoFromDb, err := repository.GetById(todoId)
+	if err != nil {
+		panic(err)
+	}
+	logger.Debug("todo from db", todoFromDb)
+}
+
+func deleteUser(userRepository *user.UserRepository, userId int) {
+	err := userRepository.Delete(userId)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func deleteTodo(err error, todoRepository *todo.TodoRepository, todoId int) {
-	err = todoRepository.Delete(todoId)
+func deleteTodo(todoRepository *todo.TodoRepository, todoId int) {
+	err := todoRepository.Delete(todoId)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func updateTodo(todoFromDb todo.Todo, err error, todoRepository *todo.TodoRepository, todoId int) {
+func updateTodo(todoFromDb todo.Todo, todoRepository *todo.TodoRepository, todoId int) {
 	todoFromDb.Checked = true
-	err = todoRepository.Update(todoFromDb)
+	err := todoRepository.Update(todoFromDb)
 	if err != nil {
 		panic(err)
 	}
@@ -65,9 +96,9 @@ func updateTodo(todoFromDb todo.Todo, err error, todoRepository *todo.TodoReposi
 	logger.Debug("updated todo from db", updatedTodoFromDb)
 }
 
-func updateUser(userFromDb user.User, err error, userRepository *user.UserRepository, userId int) {
+func updateUser(userFromDb user.User, userRepository *user.UserRepository, userId int) {
 	userFromDb.State.SomeValue = "updated value"
-	err = userRepository.Update(userFromDb)
+	err := userRepository.Update(userFromDb)
 	if err != nil {
 		panic(err)
 	}
@@ -78,7 +109,7 @@ func updateUser(userFromDb user.User, err error, userRepository *user.UserReposi
 	logger.Debug("updated user from db", updatedUserFromDb)
 }
 
-func createTodo(userId int, err error, todoRepository *todo.TodoRepository) (int, todo.Todo) {
+func createTodo(userId int, todoRepository *todo.TodoRepository) (int, todo.Todo) {
 	todoToCreate := todo.Todo{
 		Name:    "Test",
 		Checked: false,
@@ -99,7 +130,7 @@ func createTodo(userId int, err error, todoRepository *todo.TodoRepository) (int
 	return todoId, todoFromDb
 }
 
-func createUser(err error, userRepository *user.UserRepository) (int, user.User) {
+func createUser(userRepository *user.UserRepository) (int, user.User) {
 	userInstance := user.User{
 		Email: "doesnot@shouldnotexist.com",
 		State: user.UserState{
